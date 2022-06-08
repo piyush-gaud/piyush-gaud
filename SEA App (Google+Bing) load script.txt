@@ -1,0 +1,621 @@
+///$tab PKG_LOAD_G_ADS_TABLES
+//---> This procedure load all google master accounts present in the QVD file. (WLG,Smartbids)
+SUB LOAD_GOOGLE_MASTER_ACCOUNTS
+  [MasterAccounts]:
+    Load * 
+    FROM  [lib://SEA Apps:DataFiles/MasterAccounts.qvd](qvd);
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load all Google managed customers present in the QVD file.
+SUB LOAD_GOOGLE_MANAGED_ACCOUNTS
+  [ManagedCustomers]:
+    LOAD
+      masterAccountId,
+      customerId, 
+      name , 
+      currencyCode as [CurrencyCode],
+      //Extract Vertical from the Account Name
+      TRIM(UPPER(SubField(name,' ',1))) AS Vertical,
+      //Extract Geo from the Account Name
+      If(Isnum(SubField(name,' ',2)),SubField(name,' ',3),SubField(name,' ',2)) AS Geo,
+      //Extract Reduction field from the Account Name for access control
+      TRIM(UPPER(SubField(name,' ',1))) as REDUCTION
+    FROM [lib://SEA Apps:DataFiles/MANAGED_CUSTOMERS_GOOGLEADS_API.qvd](qvd)
+    ;
+End SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Google Campaigns performance report from the QVD file.
+SUB LOAD_GOOGLE_CAMPAIGNS
+  [CampaignPerformanceReport]:
+    LOAD 
+      campaignID, 
+      campaignName as campaignName, 
+      campaignState AS CampaignStatus, 
+      customerId
+    FROM [lib://SEA Apps:DataFiles/CAMPAIGN_PERFORMANCE_REPORT_GOOGLE_ADS_API.qvd](qvd)
+    ;
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Google Campaigns labels from the QVD file.
+SUB LOAD_GOOGLE_CAMPAIGN_LABELS
+  [CampaignLabels]:
+    LOAD 
+    campaignID,
+  	labelName AS campaign.label_name
+    FROM [lib://SEA Apps:DataFiles/CAMPAIGN_LABELS_GOOGLE_ADS_API.qvd](qvd)
+    ;
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Google Adgroups performance report from the QVD file.
+SUB LOAD_GOOGLE_ADGROUPS
+  [AdGroupsPerformanceReport]:
+    LOAD 
+      [AdGroupName],
+      [adGroupID],
+      [adGroupState]
+    FROM [lib://SEA Apps:DataFiles/ADGROUP_PERFORMANCE_REPORT_GOOGLE_ADS_API.qvd](qvd);
+End SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Adgroup labels from the QVD file.
+SUB LOAD_GOOGLE_ADGROUPS_LABELS
+  [AdgroupLabels]:
+  LOAD
+  adGroupID,
+  adgroup.label_name as adgroup.label_name 
+  FROM [lib://SEA Apps:DataFiles/ADGROUP_LABELS_GOOGLE_ADS_API.qvd](qvd)
+    ;
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Clicks performance report from the QVD file.
+SUB LOAD_GOOGLE_CLICKS_PERFORMANCE_REPORTS
+  LET lv_count = (gv_StartDate)-(gv_EndDate)+1;
+  SET x = 1;
+  Do while  x <= $(lv_count)   
+  LET lv_date = Date(Today()-x,'YYYYMMDD');
+    //---> Date > '2022-01-25' THEN COMPOSITE KEY = Date + KeywordId + Device + AdGroupId
+IF ($(lv_date) <= 20220125) then 
+  [ClickPerformanceReport]:
+    LOAD 
+      clicks,
+      clickType,
+      googleClickID as SEA_ClickID,
+      page,
+      AUTONUMBER(Date(day,'YYYY-MM-DD')&keywordID&ApplyMap('Google_Ads_Device_EncodingMap',device)&adGroupID) as "CK_KEYWORD_&_CLICK_REPORT"
+    FROM [lib://SEA Apps:DataFiles/CLICK_PERFORMANCE_REPORT_$(lv_date).qvd](qvd);
+    //---> Date < '2022-01-25' THEN COMPOSITE KEY = Date + KeywordId + Device + AdGroupId
+ELSE 
+  [ClickPerformanceReport]:
+    LOAD 
+      clicks,
+      clickType,
+      googleClickID as SEA_ClickID,
+      page,
+      AUTONUMBER(Date(day,'YYYY-MM-DD')&SubField(keywordID,'~',-1)&device&adGroupID) as "CK_KEYWORD_&_CLICK_REPORT"
+    FROM [lib://SEA Apps:DataFiles/CLICK_PERFORMANCE_REPORT_GOOGLE_ADS_API_$(lv_date).qvd](qvd);
+END IF;
+LET x=x+1;
+LOOP
+End SUB;
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Google Keywords performance report from the QVD file.
+SUB LOAD_GOOGLE_KEYWORD_PERFORMANCE_REPORTS
+  [KeywordPerformanceReport]:
+    LOAD 
+      adGroupID,
+      keywordID,
+      campaignID, 
+      clicks as ClicksFromKeywordReport,
+      qualityScore, 
+      keyword,
+      matchType,  
+      [Cost],
+      [impressions],
+      [ctr],
+      Dual('W'&week(day),week(day)) as Week,
+      AUTONUMBER(Date(day,'YYYY-MM-DD')&keywordID&device&adGroupID) as "CK_KEYWORD_&_CLICK_REPORT",
+      [convRate],
+      day,
+      device,
+      [costConv],
+      [totalConvValue],
+      [avgCPC],
+      [imprAbsTop],
+      [imprTop],
+      [conversions],
+      '-' AS "CK_KEYWORD_&_CLICKS"
+    FROM [lib://SEA Apps:DataFiles/KEYWORD_PERFORMANCE_REPORT_GOOGLE_ADS_API.qvd](qvd);
+End SUB;
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Keywords labels from the QVD file.
+SUB LOAD_GOOGLE_KEYWORD_LABELS
+  [KeywordLabels]:
+  LOAD
+  keywordID,
+  keyword.label_name
+  FROM [lib://SEA Apps:DataFiles/KEYWORD_LABELS_GOOGLE_ADS_API.qvd](qvd)
+    ;
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+// This package replaces the old devices from Click performance report names to the new one. 
+SUB LOAD_GOOGLE_DEVICE_ENCODING_MAP
+    // Procedure logic
+    [Google_Ads_Device_EncodingMap]:
+      mapping LOAD * 
+      Inline [
+        device_old, device_new
+        Computers, DESKTOP
+        Mobile devices with full browsers, MOBILE
+        Tablets with full browsers, TABLET
+        ] ;
+END SUB
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+
+
+
+
+///$tab PKG_LOAD_BING_ADS_TABLES
+//---> Procedure to load all Master customers for the Bing Ads present in the QVD file.
+SUB LOAD_BING_MASTER_ACCOUNTS
+//---> Connect to Google ads connection string
+[MasterAccounts]:
+  LOAD 
+    masterAccountId as masterAccountId, 
+    "Account Name" AS "Account Name",
+    Source
+  FROM [lib://SEA Apps:DataFiles/MASTER_ACCOUNTS_BING.qvd](qvd);
+END SUB;
+
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> Procedure to load all managed customers for the Bing Ads present in the QVD file.
+SUB LOAD_BING_MANAGED_ACCOUNTS
+[ManagedCustomers]:
+  LOAD 
+    CustomerId as masterAccountId, 
+    CurrencyCode as [CurrencyCode], 
+    AccountName as  name,
+    AccountId as customerId,
+    //---> Extract Vertical from the Account Name
+    if(SubStringCount(TRIM(UPPER(SubField(AccountName,' ',1))),'[')>=1,TextBetween(TRIM(UPPER(SubField(AccountName,' ',1))),'[',']'),TRIM(UPPER(SubField(AccountName,' ',1)))) AS Vertical,
+    //---> Extract Reduction field from the Account Name for access control
+    if(SubStringCount(TRIM(UPPER(SubField(AccountName,' ',1))),'[')>=1,TextBetween(TRIM(UPPER(SubField(AccountName,' ',1))),'[',']'),TRIM(UPPER(SubField(AccountName,' ',1)))) as REDUCTION,
+        //---> Extract Geo from the Account Name
+    If(Isnum(SubField(AccountName,' ',2)),SubField(AccountName,' ',3),SubField(AccountName,' ',2)) AS Geo
+  FROM [lib://SEA Apps:DataFiles/ACCOUNT_PERFORMANCE_REPORT_BING.qvd](qvd);
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> Procedure to load Bing Campaigns performance reports from the QVD file.
+SUB LOAD_BING_CAMPAIGNS
+  [CampaignPerformanceReport]:
+  LOAD
+    CampaignId as campaignID, 
+    CampaignName as campaignName, 
+    CampaignStatus, 
+    AccountId as customerId
+  FROM [lib://SEA Apps:DataFiles/CAMPAIGN_PERFORMANCE_REPORT_BING.qvd](qvd);
+END SUB;
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Campaigns labels from the QVD file.
+SUB LOAD_BING_CAMPAIGN_LABELS
+  [CampaignLabels]:
+  LOAD
+  CampaignId as campaignID,
+  CampaignLabels AS campaign.label_name
+  FROM [lib://SEA Apps:DataFiles/CAMPAIGN_PERFORMANCE_REPORT_BING.qvd](qvd);
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Bing Adgroups performance reports from the QVD file.
+SUB LOAD_BING_ADGROUPS
+  [AdGroupsPerformanceReport]:
+  LOAD
+    AdGroupId as adGroupID, 
+    AdGroupName as [AdGroupName], 
+    Status as [adGroupState]
+  FROM [lib://SEA Apps:DataFiles/ADGROUP_PERFORMANCE_REPORT_BING.qvd](qvd);
+End SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Adgrups labels from the QVD file.
+SUB LOAD_BING_ADGROUPS_LABELS
+  [AdgroupLabels]:
+  LOAD
+  AdGroupId as adGroupID, 
+  AdGroupLabels AS adgroup.label_name
+  FROM [lib://SEA Apps:DataFiles/ADGROUP_PERFORMANCE_REPORT_BING.qvd](qvd);
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure load Bing Keyword performance reports from the QVD file.
+SUB LOAD_BING_KEYWORD_PERFORMANCE_REPORTS
+  [KeywordPerformanceReport]:
+  LOAD
+    KeywordId as keywordID, 
+    Keyword as keyword, 
+    CampaignId as campaignID,
+    AdGroupId as adGroupID,
+    'NA' as matchType,
+    DeviceType as device,
+    QualityScore as qualityScore, 
+    Clicks as ClicksFromKeywordReport, 
+    Spend as [Cost], 
+    Impressions as [impressions], 
+    Clicks/Impressions as [ctr], 
+    Date(TimePeriod) as day, 
+    Dual('W'&week(Date(TimePeriod)),week(Date(TimePeriod))) as Week,
+    ConversionRate as [convRate], 
+    CostPerConversion as [costConv], 
+    AllRevenue as totalConvValue, 
+    Spend/Clicks as [avgCPC], 
+    AbsoluteTopImpressionRatePercent as [imprAbsTop], 
+    TopImpressionRatePercent as [imprTop], 
+    AllConversions as conversions,
+    //---> Timeperiod > '2022-04-20' THEN COMPOSITE KEY = TimePeriod + KeywordId + AdGroupId + CampaignId + DeviceType 
+    //---> Timeperiod < '2022-04-20' THEN COMPOSITE KEY = TimePeriod + KeywordId + AdGroupId + CampaignId
+    if (Date(TimePeriod)>'2022-04-20',AUTONUMBER(Date(TimePeriod)&KeywordId&AdGroupId&CampaignId&DeviceType),AUTONUMBER(Date(TimePeriod)&KeywordId&AdGroupId&CampaignId)) as "CK_KEYWORD_&_CLICK_REPORT",
+    if (Date(TimePeriod)>'2022-04-20',AUTONUMBER(Date(TimePeriod)&KeywordId&AdGroupId&CampaignId&DeviceType),AUTONUMBER(Date(TimePeriod)&KeywordId&AdGroupId&CampaignId)) AS "CK_KEYWORD_&_CLICKS"
+  FROM [lib://SEA Apps:DataFiles/KEYWORDS_PERFORMANCE_REPORT_BING.qvd](qvd);
+End SUB;
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---> This procedure load Bing Clicks performance reports from the QVD file.
+//---> Clicks performance reports are not available in the case of Bing ads. Hence, this table has been faked to maintain the uniform data model structure of this app.
+SUB LOAD_BING_CLICKS_PERFORMANCE_REPORTS
+[ClickPerformanceReport]:
+  LOAD 
+     1 as clicks,
+    'NA' as clickType,
+    'NA' as page,
+    "CK_KEYWORD_&_CLICKS" as SEA_ClickID,
+    "CK_KEYWORD_&_CLICKS" as "CK_KEYWORD_&_CLICK_REPORT"
+  RESIDENT KeywordPerformanceReport;
+End SUB;
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//---> This procedure load Keyword labels from the QVD file.
+SUB LOAD_BING_KEYWORD_LABELS
+  [KeywordLabels]:
+  LOAD
+  KeywordId as keywordID,  
+  KeywordLabels AS keyword.label_name
+  FROM [lib://SEA Apps:DataFiles/KEYWORDS_PERFORMANCE_REPORT_BING.qvd](qvd);
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure maps the bing device codes to the device names.
+SUB LOAD_BING_DEVICE_ENCODING_MAP
+    // Local variables:
+    SET lv_pkg_name = 'pkg_load_help_tables';
+    SET lv_prc_name = 'prc_load_bing_device_encoding_map';
+[Bing_Device_EncodingMap]:
+    mapping LOAD * 
+    Inline [
+      device_bing, device
+      m, Smartphone
+      c, Computer
+      t, Tablet
+] ;
+END SUB
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+///$tab PKG_LOAD_CAKE_DATA
+// pkg_load_help_tables
+// This package contains all procedures needed to load the help tables
+SUB prc_load_url_encoding_map(gv_DebugLevel, gv_KeepInMemory)
+    // Local variables:
+    SET lv_pkg_name = 'pkg_load_help_tables';
+    SET lv_prc_name = 'prc_load_url_encoding_map';
+  // Procedure logic
+  [URL_EncodingMap]:
+    Mapping LOAD
+    URL_encoding, 
+    ASCII_Character
+  FROM [lib://Get data:DataFiles/URL_EncodingMap.qvd](qvd);
+END SUB
+
+SUB PRC_LOAD_DATA_FROM_DATE (load_start_date,load_end_date)   
+  // Local variables:
+    SET lv_pkg_name = 'PKG_LOAD_MAIN_TABLES';
+    SET lv_prc_name = 'PRC_LOAD_DATA_FROM_DATE';
+  	// Procedure logic
+    // Use todays date to extract the first of the current Month as YYYY-MM-DD
+    LET lv_load_month_start = text((date(monthstart('$(load_start_date)'), 'YYYY-MM-DD')));
+    LET lv_load_month_end = text((date(monthstart('$(load_end_date)'), 'YYYY-MM-DD')));
+    // Add the extracted value to the list as the first entry
+    SET lv_month_list = "'$(lv_load_month_start)'";
+    LET lv_number_of_month = (year('$(load_end_date)')*12 + month('$(load_end_date)')) - (year('$(load_start_date)')*12 + month('$(load_start_date)'));   
+    // Iterate using the number of needed Months and append them to the list
+    FOR x=1 to $(lv_number_of_month) 
+      LET lv_next_month_start = text((date(monthstart(('$(load_start_date)'), + x), 'YYYY-MM-DD')));
+      SET lv_month_list = $(lv_month_list), '$(lv_next_month_start)';
+    NEXT
+    // Log the final list
+    TRACE >>> "List of Month to load: "$(lv_month_list);  
+END SUB
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+
+//--------- PRC_LOAD_CLICKS ---------
+SUB PRC_LOAD_CLICKS(gv_DebugLevel, lv_month_list)
+  // Local variables:
+    SET lv_pkg_name = 'PKG_LOAD_MAIN_TABLES';
+    SET lv_prc_name = 'PRC_LOAD_CLICKS';
+  // Procedure logic
+    for Each v_month in $(lv_month_list)
+    	[clicks]:
+    	LOAD 
+        click_id
+        ,click_date
+        ,paid_currency_id
+        ,if(Len(sub_id_1) < 20,sub_id_1,'-') as sub_id_1
+        ,if(sub_id_2='0', Null(),sub_id_2) as sub_id_2
+        ,if(wildmatch(sub_id_3, '*pop*') = 1,'Popup',sub_id_3) as sub_id_3
+        ,sub_id_4_decoded
+        ,MapSubstring('URL_EncodingMap', sub_id_5) as sub_id_5
+        ,brand_advertiser_id
+        ,browser_id
+        ,campaign_id
+        ,country_code
+        ,device_id
+        ,language_id
+        ,operating_system_id
+        ,site_offer_id
+        ,source_affiliate_id
+        //,referrer_url
+        //Extract the Campaign id of the Bing ads from the sub_id_3
+        ,TextBetween(sub_id_3, 'cpn-' ,'_',1) as cpn_id
+        //Extract the Adgroup id of the Bing ads from the sub_id_3
+        ,TextBetween(sub_id_3, 'adg-' ,'_') as adg_id
+        //Extract the Keyword id of the Bing ads from the sub_id_3
+        ,TextBetween(sub_id_3, 'kwd-' ,':') as kwd_id
+        //Extract the device of the Bing ads from the sub_id_3
+        ,ApplyMap('Bing_Device_EncodingMap',TextBetween(sub_id_3, 'dev-' ,'')) as device_bing,
+        //Extract Google click id from the referrer_url
+		    Coalesce(sub_id_2,If(WildMatch(referrer_url, '*gclid=*'), Coalesce(TextBetween(referrer_url, 'gclid=', '&'),TextBetween(referrer_url, 'gclid=', Null())))) as SEA_ClickID
+      FROM [lib://Get data:DataFiles/clicks_$(v_month).qvd](qvd)
+      // filtering China-Traffic was requested in https://app.asana.com/0/0/1156075390897963/f
+      WHERE country_code <> 'CN'
+      //filtering the global redirect traffic (Offer_Name = Global Redirect)
+        AND site_offer_id <> '-2'
+        AND sub_id_2 <> 'direct'
+        AND site_offer_id <> '-2'
+        AND site_offer_id <> '0'
+        AND site_offer_id <> '-1'
+        AND site_offer_id <> '-2'
+        AND click_date >= '2021-04-01 00:00:00'
+        AND click_date <= Date(Today())
+        //remove Adsome: https://app.asana.com/0/1125703237007618/1174226107978036/f
+        AND brand_advertiser_id <> '433'
+        // remove SQL-injection subids: https://app.asana.com/0/inbox/950215882034773/1180550082599430/1180925309805044
+        AND match( sub_id_1, '(') = 0
+      ;
+      NEXT
+END SUB
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//--------- PRC_LOAD_CONVERSIONS ---------
+SUB PRC_LOAD_CONVERSIONS(lv_month_list)
+  // Local variables:
+    //SET --> Assigns the value(or expression which is after the equal sign) as it is, without compute, compute it using $(v_var)
+    //LET --> Calculates the expression assigned to it and sets the expression result to the variable
+    SET lv_pkg_name = 'PKG_LOAD_MAIN_TABLES';
+    SET lv_prc_name = 'PRC_LOAD_CONVERSIONS';
+  // Procedure logic
+    for Each v_month in $(lv_month_list)
+    	[conversions]:
+        LOAD
+          click_id,
+          event_conversion_id,
+          event_conversion_date,
+          paid_amount
+    	FROM [lib://Get data:DataFiles/conversions_$(v_month).qvd](qvd)
+        Where paid_amount >= 0;
+        Next
+END SUB
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//--------- PRC_LOAD_LEADS ---------
+SUB PRC_LOAD_LEADS(lv_month_list)
+  // Local variables:
+    //SET --> Assigns the value(or expression which is after the equal sign) as it is, without compute, compute it using $(v_var)
+    //LET --> Calculates the expression assigned to it and sets the expression result to the variable
+    SET lv_pkg_name = 'PKG_LOAD_MAIN_TABLES';
+    SET lv_prc_name = 'PRC_LOAD_LEADS';
+  // Procedure logic
+    for Each v_month in $(lv_month_list)
+      Concatenate	[conversions]:
+    	  LOAD
+          click_id,
+          event_conversion_id,
+          event_conversion_date,
+          paid_amount
+        FROM [lib://Get data:DataFiles/leads_$(v_month).qvd](qvd)
+        Where paid_amount >= 0;
+    Next
+END SUB
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+///$tab PKG_REWORK_DATA
+//---> This procedure is used to apply left Keep (equivalent to left join).
+//---> This procedure will only load gclids from Click performance report that has a matching record in Cake: Clicks table.
+SUB  PRC_REWORK_DATA_1
+[clicks_temp]:
+    LOAD *,
+    AUTONUMBER(Date(Floor(click_date), 'YYYY-MM-DD')&kwd_id&'"'&adg_id&'"'&cpn_id&device_bing) as SEA_ClickID_Temp
+    RESIDENT [clicks];
+    DROP TABLE [clicks];
+    RENAME TABLE [clicks_temp] TO [clicks]; 
+END SUB
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+SUB  PRC_REWORK_DATA_2
+[clicks_temp]:
+LOAD
+    click_id
+    ,click_date
+    ,paid_currency_id
+    ,sub_id_1
+    ,sub_id_2
+    ,sub_id_3
+    ,sub_id_4_decoded
+    ,sub_id_5
+    ,brand_advertiser_id
+    ,browser_id
+    ,campaign_id
+    ,country_code
+    ,device_id
+    ,language_id
+    ,operating_system_id
+    ,site_offer_id
+    ,source_affiliate_id
+    //,[referrer_url]
+    ,cpn_id
+    ,adg_id
+    ,kwd_id
+    ,device_bing
+    ,if(WildMatch(sub_id_3, '*cpn-*'),SEA_ClickID_Temp,SEA_ClickID) as SEA_ClickID
+RESIDENT [clicks];
+DROP TABLE [clicks];
+RENAME TABLE [clicks_temp] TO [clicks];
+END SUB
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+//---> This procedure is used to apply left Keep (equivalent to left join).
+//---> This procedure will only load gclids from Click performance report that has a matching record in Cake: Clicks table.
+SUB  PRC_REWORK_DATA_3
+[clicks_temp]:
+INNER KEEP (ClickPerformanceReport)
+LOAD *
+RESIDENT [clicks];
+DROP TABLE [clicks];
+RENAME TABLE [clicks_temp] TO [clicks];
+END SUB
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+SUB  PRC_REWORK_DATA_4
+//---> This procedure will only load conversions that has the clickid'S present in  the Clicks table. Equivalent to Left join.
+[conversions_temp]:
+LEFT KEEP (clicks)
+LOAD *
+RESIDENT [conversions];
+DROP TABLE [conversions];
+RENAME TABLE [conversions_temp] TO [conversions];
+END SUB;
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+
+SUB  PRC_REWORK_DATA_5
+//---> This procedure will calculate the measures required in the SEA dashboard 
+[AdGroupData_temp]:
+LOAD *,
+	Sum(conversions)/Sum(clicks) as "Click > Conversion",
+	Sum(Cost)/SUM(clicks) as CPC,
+    SUM(Cost)/sum(conversions) as "Cost/Conv",
+    (Sum(totalConvValue)-sum(Cost))/sum(Cost) as ROAS,
+    Sum(totalConvValue)/SUM(clicks) as EPC,
+    Sum(totalConvValue)/Sum(conversions) as VPC,
+    Sum(totalConvValue)-sum(Cost) as "Profit/Loss"
+RESIDENT [AdGroupsPerformanceReport];
+DROP TABLE [AdGroupsPerformanceReport];
+RENAME TABLE [AdGroupData_temp] TO [AdGroupsPerformanceReport];
+END SUB;
+//--------------------------------------------------------------------------------------------------------------------------------------------------------------------//
+
+
+
+///$tab PKG_SECTION_ACCESS
+// pkg_user_access
+Sub PRC_USER_ACCESS_REDUCTION   
+        Section Access;
+        
+        LOAD * inline [
+ACCESS, USERNAME, USERID, REDUCTION, OMIT
+ADMIN, Anatolij Oblender, auth0|d4f0d772-d641-4a3f-8b91-88901808704c,, *
+ADMIN, Piyush Gaud, auth0|3d37aa488b8e2c9dd8402b9ad54ac7bd1e80b23cdc82bf00726da0dd0795bcb0, , *
+USER, Till Haakshorst, auth0|a08D000001LRNkaIAH,*, *
+USER, Dave Manz, auth0|e89315b7-acfc-4cfb-b2ff-93376a65a2d3, *, *
+USER, Ray Laws, auth0|78608b1763a103692758b8033d010b98f423219c9bce4407fd4dec3ad9467799,*, *
+USER, Dimitris Chrysanthakopoulos, auth0|43dc100eaf1f88a65a891dff5d4ba5fc97dbef3b883128c2b66c60691b77b8fc, WLA, *
+USER, Dimitris Chrysanthakopoulos, auth0|43dc100eaf1f88a65a891dff5d4ba5fc97dbef3b883128c2b66c60691b77b8fc, WLD, *
+USER, Dimitris Chrysanthakopoulos, auth0|43dc100eaf1f88a65a891dff5d4ba5fc97dbef3b883128c2b66c60691b77b8fc, WLMD, *
+USER, Alexander Georgi, auth0|3743a1bb5268b4257efa522b4dd067615c32081a93964df6493aa514f9adb919, WLG, *
+USER, Alexander Georgi, auth0|3743a1bb5268b4257efa522b4dd067615c32081a93964df6493aa514f9adb919, WLS, *
+USER, Alexander Georgi, auth0|3743a1bb5268b4257efa522b4dd067615c32081a93964df6493aa514f9adb919, 60FG, *
+USER, Rene Kosikowski, auth0|246301807441ac4d95c323f4fcf9aaf5c279ad30281d8bbe1543cb12d2ee04da, WLF, *
+USER, Rene Kosikowski, auth0|246301807441ac4d95c323f4fcf9aaf5c279ad30281d8bbe1543cb12d2ee04da, WLV, *
+USER, Rene Kosikowski, auth0|246301807441ac4d95c323f4fcf9aaf5c279ad30281d8bbe1543cb12d2ee04da, WLA, *
+USER, Rene Kosikowski, auth0|246301807441ac4d95c323f4fcf9aaf5c279ad30281d8bbe1543cb12d2ee04da, WLD, *
+USER, Pontus Axberg,  auth0|33fd26640470138bd06ce573336883e18ff06b039b7c079c9d0aec6ca5fdd9c7, WLC, *
+USER, Pontus Axberg,  auth0|33fd26640470138bd06ce573336883e18ff06b039b7c079c9d0aec6ca5fdd9c7, WLB, *
+USER, Pontus Axberg,  auth0|33fd26640470138bd06ce573336883e18ff06b039b7c079c9d0aec6ca5fdd9c7, WLBG, *
+USER, Dominik Kolbert,auth0|ba55d2ae2af7a29fd75a961c7129c29b5386561ff0d5433a2caa05987d36a333,WLA, *
+USER, Dominik Kolbert,auth0|ba55d2ae2af7a29fd75a961c7129c29b5386561ff0d5433a2caa05987d36a333,WLD, *
+USER,Julien Desreumaux,auth0|c01210e21a4309487156e7e79979974884d9a24f98509dddf9fcd04ca397df7e,WLV,*
+USER,Julien Desreumaux,auth0|c01210e21a4309487156e7e79979974884d9a24f98509dddf9fcd04ca397df7e,WLA,* 
+];
+	Section application;       
+END SUB
+
+
+///$tab PKG_WORKFLOW
+// pkg_workflow
+    // Doc.:
+// ################################
+SET ThousandSep=',';
+SET DecimalSep='.';
+SET MoneyThousandSep=',';
+SET MoneyDecimalSep='.';
+SET MoneyFormat='€#,##0.00;-€#,##0.00';
+SET TimeFormat='hh:mm:ss TT';
+SET DateFormat='YYYY-MM-DD';
+SET TimestampFormat='YYYY-MM-DD hh:mm:ss[.fff]';
+SET FirstWeekDay=0; //Monday is the first Week Day
+SET BrokenWeeks=0; // 0 (=use unbroken weeks)  1 (= use broken weeks) 
+//0 - use unbroken weeks --> In some years, week 1 starts in December, and in other years, week 52 or 53 continues into January. Week 1 always has at least 4 days in January.
+//1 - use brocken weeks --> Week 52 or 53 do not continue into January. Week 1 starts on January 1 and is, in most cases, not a full week.
+SET ReferenceDay=0;
+SET FirstMonthOfYear=1;
+SET CollationLocale='en-US';
+SET CreateSearchIndexOnReload=1;
+SET MonthNames='01;02;03;04;05;06;07;08;09;10;11;12';
+SET LongMonthNames='January;February;March;April;May;June;July;August;September;October;November;December';
+SET DayNames='Mon;Tue;Wed;Thu;Fri;Sat;Sun';
+SET LongDayNames='Monday;Tuesday;Wednesday;Thursday;Friday;Saturday;Sunday';
+SET NumericalAbbreviation='3:k;6:M;9:G;12:T;15:P;18:E;21:Z;24:Y;-3:m;-6:μ;-9:n;-12:p;-15:f;-18:a;-21:z;-24:y';
+SET ErrorMode = 0;
+    // 0 --> protocol the errors and continue script execution
+    // 1 --> stop the script execution with prompting user for action
+    // 2 --> displaying the error message without prompting the user for action
+//--------- DECLARE_VARIABLES ---------
+LET gv_EndDate = Date('2021-08-25');
+LET gv_StartDate = Date(Today()-1);
+
+//---Limit User access to the specific verticals
+CALL PRC_USER_ACCESS_REDUCTION;
+
+//---Load Google Ads data
+CALL LOAD_GOOGLE_MASTER_ACCOUNTS;
+CALL LOAD_GOOGLE_MANAGED_ACCOUNTS;
+CALL LOAD_GOOGLE_CAMPAIGNS;
+CALL LOAD_GOOGLE_CAMPAIGN_LABELS;
+CALL LOAD_GOOGLE_ADGROUPS;
+CALL LOAD_GOOGLE_ADGROUPS_LABELS;
+CALL LOAD_GOOGLE_DEVICE_ENCODING_MAP;
+CALL LOAD_GOOGLE_KEYWORD_PERFORMANCE_REPORTS;
+CALL LOAD_GOOGLE_KEYWORD_LABELS;
+CALL LOAD_GOOGLE_CLICKS_PERFORMANCE_REPORTS;
+
+//---Load Google Ads data
+CALL LOAD_BING_MASTER_ACCOUNTS;
+CALL LOAD_BING_MANAGED_ACCOUNTS;
+CALL LOAD_BING_CAMPAIGNS;
+CALL LOAD_BING_CAMPAIGN_LABELS;
+CALL LOAD_BING_ADGROUPS;
+CALL LOAD_BING_ADGROUPS_LABELS;
+CALL LOAD_BING_DEVICE_ENCODING_MAP;
+CALL LOAD_BING_KEYWORD_PERFORMANCE_REPORTS;
+CALL LOAD_BING_KEYWORD_LABELS;
+CALL LOAD_BING_CLICKS_PERFORMANCE_REPORTS;
+
+//---Load Clicks, leads and conversions
+CALL PRC_LOAD_DATA_FROM_DATE(gv_EndDate,gv_StartDate);
+CALL PRC_LOAD_URL_ENCODING_MAP(GV_DEBUGLEVEL);
+Call PRC_LOAD_CLICKS(gv_DebugLevel, lv_month_list);
+Call PRC_LOAD_CONVERSIONS(lv_month_list);
+Call PRC_LOAD_LEADS (lv_month_list);
+
+//---Rework data
+CALL PRC_REWORK_DATA_1;
+CALL PRC_REWORK_DATA_2;
+CALL PRC_REWORK_DATA_3;
+CALL PRC_REWORK_DATA_4;
